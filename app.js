@@ -2,21 +2,19 @@ const express = require("express");
 const path = require("path");
 const { open } = require("sqlite");
 const sqlite3 = require("sqlite3");
-const format = require("date-fns/format");
-const isValid = require("date-fns/isValid");
+const bcrypt = require("bcrypt");
+const jwt = require("jsonwebtoken");
+
 const app = express();
 app.use(express.json());
 module.exports = app;
 
 let db = null;
-const dbPath = path.join(__dirname, "todoApplication.db");
+const dbPath = path.join(__dirname, "twitterClone.db");
 
-const initializeDBAndServer = async () => {
+const initializationDBAndServer = async () => {
   try {
-    db = await open({
-      filename: dbPath,
-      driver: sqlite3.Database,
-    });
+    db = await open({ filename: dbPath, driver: sqlite3.Database });
     app.listen(3000, () => {
       console.log("Server is running at http://localhost:3000");
     });
@@ -26,281 +24,337 @@ const initializeDBAndServer = async () => {
   }
 };
 
-initializeDBAndServer();
+initializationDBAndServer();
 
-const validateRequestData = async (request, response, next) => {
-  // this middle wear is created for retrieve the data from query and params.
-  const { id, search_q, todo, status, priority, category } = request.query;
+const validateUserRegistration = async (request, response, next) => {
+  const { username, password, name, gender } = request.body;
 
-  const { todoId } = request.params;
-  const statusArray = ["TO DO", "IN PROGRESS", "DONE"];
-  const priorityArray = ["HIGH", "MEDIUM", "LOW"];
-  const categoryArray = [`WORK`, `HOME`, `LEARNING`];
-
-  if (status !== undefined) {
-    // status validation
-    const isValidStatus = await statusArray.includes(status);
-    if (isValidStatus) {
-      request.status = status;
+  if (username !== undefined) {
+    // scenario 1
+    const isUserAlreadyExists = `
+      SELECT * FROM user WHERE username = '${username}';
+      `;
+    const result = await db.get(isUserAlreadyExists);
+    if (result === undefined) {
+      if (password.length < 6) {
+        // scenario 2
+        response.status(400);
+        response.send("Password is too short");
+      } else {
+        request.username = username;
+        request.password = password;
+        request.name = name;
+        request.gender = gender;
+        next();
+      }
     } else {
       response.status(400);
-      response.send("Invalid Todo Status");
-      return;
+      response.send("User already exists");
     }
   }
-
-  if (priority !== undefined) {
-    // priority validation
-    const isValidPriority = await priorityArray.includes(priority);
-    if (isValidPriority) {
-      request.priority = priority;
-    } else {
-      response.status(400);
-      response.send("Invalid Todo Priority");
-      return;
-    }
-  }
-
-  if (category !== undefined) {
-    // category validation
-    const isValidCategory = await categoryArray.includes(category);
-    if (isValidCategory) {
-      request.category = category;
-    } else {
-      response.status(400);
-      response.send("Invalid Todo Category");
-      return;
-    }
-  }
-
-  request.id = id;
-  request.todoId = todoId;
-  request.todo = todo;
-  request.search_q = search_q;
-  next();
 };
 
+const validateUser = async (request, response, next) => {
+  const { username, password } = request.body;
+  console.log(username);
+  const getUserDetails = `
+  SELECT * FROM user WHERE username = '${username}';`;
+  const userData = await db.get(getUserDetails);
+
+  if (userData === undefined) {
+    response.status(400);
+    response.send("Invalid user");
+  } else {
+    const isPasswordMatched = await bcrypt.compare(password, userData.password);
+    if (isPasswordMatched) {
+      request.username = username;
+      next();
+    } else {
+      response.status(400);
+      response.send("Invalid password");
+    }
+  }
+};
+
+const jwtAuthorization = (request, response, next) => {
+  let userJwtToken;
+  const header = request.headers["authorization"];
+  if (header !== undefined) {
+    userJwtToken = header.split(" ")[1];
+  }
+  if (userJwtToken !== undefined) {
+    jwt.verify(userJwtToken, "My_Account", async (error, payload) => {
+      if (error) {
+        response.status(401);
+        response.send("Invalid JWT Token");
+      } else {
+        request.username = payload.username;
+        next();
+      }
+    });
+  } else {
+    response.status(401);
+    response.send("Invalid JWT Token");
+  }
+};
+
+const validateFollower = async (request, response, next) => {
+  const { tweetId } = request.params;
+  let userJwtToken;
+  const header = request.headers["authorization"];
+  if (header !== undefined) {
+    userJwtToken = header.split(" ")[1];
+  }
+  if (userJwtToken !== undefined) {
+    jwt.verify(userJwtToken, "My_Account", async (error, payload) => {
+      if (error) {
+        response.status(401);
+        response.send("Invalid JWT Token");
+      } else {
+        let followingList = [];
+        const getUserId = `SELECT user_id FROM user WHERE username='${payload.username}';`;
+        const userId = await db.get(getUserId);
+        const { user_id } = userId;
+
+        let follower = user_id;
+        if (tweetId !== undefined) {
+          const getFollowingId = `
+          SELECT user_id FROM tweet
+          WHERE tweet_id=${tweetId};`;
+          const followingId = await db.get(getFollowingId);
+
+          const getUserFollowingList = `
+          SELECT following_user_id FROM follower
+          WHERE follower_user_id=${follower};`;
+          const tweetDetails = await db.all(getUserFollowingList);
+
+          tweetDetails.map((item) => {
+            let { following_user_id } = item;
+            followingList.push(following_user_id);
+          });
+
+          const isUserFollowing = await followingList.includes(
+            followingId.user_id
+          );
+          //   console.log(isUserFollowing);
+          if (isUserFollowing) {
+            request.tweetId = tweetId;
+            next();
+          } else {
+            response.status(401);
+            response.send("Invalid Request");
+          }
+        } else {
+          response.status(401);
+          response.send("Invalid Request");
+        }
+      }
+    });
+  } else {
+    response.status(401);
+    response.send("Invalid JWT Token");
+  }
+  ////
+};
+
+const deleteVerification = async (request, response, next) => {
+  const { tweetId } = request.params;
+  const { username } = request;
+  const getUserId = `SELECT user_id FROM user WHERE username='${username}';`;
+  const userId = await db.get(getUserId);
+  const { user_id } = userId;
+
+  try {
+    const checkUser = `
+  SELECT user_id FROM tweet WHERE tweet_id=${tweetId};`;
+    const user = await db.get(checkUser);
+    if (user.user_id !== undefined) {
+      if (user.user_id === user_id) {
+        request.tweetId = tweetId;
+        next();
+      } else {
+        response.status(401);
+        response.send("Invalid Request");
+        console.log(2);
+      }
+    } else {
+      response.status(401);
+      response.send("Invalid Request");
+      console.log(2);
+    }
+  } catch (e) {
+    response.status(401);
+    response.send("Invalid Request");
+    console.log(1);
+  }
+};
 // API 1 //
-app.get("/todos/", validateRequestData, async (request, response) => {
-  const { priority = "", status = "", category = "", search_q = "" } = request;
-  const { todoId } = request;
-  const getDetailsOfTodo = `
-SELECT id,todo,priority,status,category,due_date as dueDate
-FROM todo
-WHERE priority LIKE '%${priority}%' AND status LIKe '%${status}%' AND
-category LIKE '%${category}%' AND todo LIKE '%${search_q}%'
-`;
-  const dbResponse = await db.all(getDetailsOfTodo);
-  response.send(dbResponse);
+app.post("/register/", validateUserRegistration, async (request, response) => {
+  const { username, password, name, gender } = request;
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const createUser = `
+  INSERT INTO user(username, password, name, gender)
+  VALUES(
+      '${username}',
+      '${hashedPassword}',
+      '${name}',
+      '${gender}');`;
+  await db.run(createUser);
+  response.send("User created successfully");
 });
 
 // API 2 //
-app.get("/todos/:todoId/", validateRequestData, async (request, response) => {
-  const { todoId } = request;
-  const getTodo = `
-        SELECT id,todo,priority,status,category,due_date AS dueDate FROM todo WHERE id = ${todoId};`;
-  const dbResponse = await db.get(getTodo);
-  response.send(dbResponse);
+app.post("/login/", validateUser, async (request, response) => {
+  const { username, password } = request;
+  const payload = { username: username };
+  const jwtToken = jwt.sign(payload, "My_Account");
+  response.send({ jwtToken });
 });
 
 // API 3 //
-app.get("/agenda/", async (request, response) => {
-  const { date } = request.query;
-
-  if (date === undefined) {
-    response.status(400);
-    response.send("Invalid Due Date");
-  } else {
-    const isValidDate = isValid(new Date(date));
-    if (isValidDate) {
-      const formattedDate = format(new Date(date), "yyyy-MM-dd");
-      const getQuery = `
-      SELECT id,todo,priority,status,category,due_date AS dueDate 
-      FROM todo WHERE due_date='${formattedDate}';`;
-      const todos = await db.all(getQuery);
-      response.send(todos);
-    } else {
-      response.status(400);
-      response.send("Invalid Due Date");
-      return;
-    }
-  }
+app.get("/user/tweets/feed/", jwtAuthorization, async (request, response) => {
+  const getData = `
+  SELECT user.username, tweet.tweet, tweet.date_time AS dateTime 
+  FROM tweet LEFT JOIN user ON tweet.user_id=user.user_id 
+  LEFT JOIN follower ON tweet.user_id=follower.following_user_id 
+  WHERE follower.following_user_id IN (SELECT following_user_id FROM follower WHERE follower_user_id=4) 
+  GROUP BY tweet.tweet_id 
+  ORDER BY tweet.date_time DESC 
+  LIMIT 4;`;
+  const dbResponse = await db.all(getData);
+  response.send(dbResponse);
 });
 
 // API 4 //
-app.post("/todos/", async (request, response) => {
-  let { id, todo, priority, status, category, dueDate } = request.body;
-
-  if (status !== undefined) {
-    // status validation
-    const statusArray = ["TO DO", "IN PROGRESS", "DONE"];
-    const isValidStatus = await statusArray.includes(status);
-    if (isValidStatus) {
-      status = status;
-    } else {
-      status = undefined;
-      response.status(400);
-      response.send("Invalid Todo Status");
-      return;
-    }
-  }
-  if (priority !== undefined) {
-    // priority validation
-    const priorityArray = ["HIGH", "MEDIUM", "LOW"];
-    const isValidPriority = await priorityArray.includes(priority);
-    if (isValidPriority) {
-      priority = priority;
-    } else {
-      priority = undefined;
-      response.status(400);
-      response.send("Invalid Todo Priority");
-      return;
-    }
-  }
-
-  if (category !== undefined) {
-    // category validation
-    const categoryArray = [`WORK`, `HOME`, `LEARNING`];
-    const isValidCategory = await categoryArray.includes(category);
-    if (isValidCategory) {
-      category = category;
-    } else {
-      category = undefined;
-      response.status(400);
-      response.send("Invalid Todo Category");
-      return;
-    }
-  }
-
-  if (dueDate !== undefined) {
-    const isValidDate = await isValid(new Date(dueDate));
-    if (isValidDate) {
-      const modifiedDate = format(new Date(dueDate), "yyyy-MM-dd");
-      dueDate = modifiedDate;
-    } else {
-      dueDate = undefined;
-      response.status(400);
-      response.send("Invalid Due Date");
-      return;
-    }
-  } else {
-    response.status(400);
-    response.send("Invalid Due Date");
-    return;
-  }
-  if (
-    status !== undefined &&
-    priority !== undefined &&
-    category !== undefined &&
-    dueDate !== undefined
-  ) {
-    const postTodo = `
-    INSERT INTO todo(id,todo,priority,status,category,due_date)
-    Values(
-        ${id},
-        '${todo}',
-        '${priority}',
-        '${status}',
-        '${category}',
-        '${dueDate}');`;
-    const dbResponse = await db.run(postTodo);
-    response.send("Todo Successfully Added");
-  }
+app.get("/user/following/", jwtAuthorization, async (request, response) => {
+  const getFollowingUserList = `
+    SELECT name FROM user 
+    LEFT JOIN follower ON user.user_id=follower.following_user_id 
+    WHERE follower.follower_user_id=4;`;
+  const dbResponse = await db.all(getFollowingUserList);
+  response.send(dbResponse);
 });
 
 // API 5 //
-app.put("/todos/:todoId/", async (request, response) => {
-  const { todoId } = request.params;
-  const { todo, category, priority, status, dueDate } = request.body;
-  switch (true) {
-    // scenario 1
-    case status !== undefined:
-      const statusArray = ["TO DO", "IN PROGRESS", "DONE"];
-      const isValidStatus = await statusArray.includes(status);
-      if (isValidStatus) {
-        const updateStatus = ` UPDATE todo SET status='${status}' WHERE id = ${todoId};`;
-        await db.run(updateStatus);
-        response.send("Status Updated");
-      } else {
-        response.status(400);
-        response.send("Invalid Todo Status");
-      }
-      break;
+app.get("/user/followers/", jwtAuthorization, async (request, response) => {
+  const getFollowingUserList = `
+    SELECT name FROM user LEFT JOIN follower 
+    ON user.user_id=follower.follower_user_id 
+    WHERE follower.following_user_id=4;`;
+  const dbResponse = await db.all(getFollowingUserList);
+  response.send(dbResponse);
+});
 
-    // scenario 2
-    case priority !== undefined:
-      const priorityArray = ["HIGH", "MEDIUM", "LOW"];
-      const isValidPriority = await priorityArray.includes(priority);
-      if (isValidPriority) {
-        const updatePriority = `
-        UPDATE todo
-        SET
-        priority='${priority}'
-        WHERE id = ${todoId};`;
-        await db.run(updatePriority);
-        response.send("Priority Updated");
-      } else {
-        response.status(400);
-        response.send("Invalid Todo Priority");
-      }
-      break;
+// API 6 //
+app.get("/tweets/:tweetId/", validateFollower, async (request, response) => {
+  const { tweetId } = request;
+  const getTweets = `
+    SELECT tweet.tweet, 
+    (
+    SELECT COUNT(like_id) FROM like 
+    WHERE tweet_id=tweet.tweet_id
+    ) AS likes,
+    (
+    SELECT COUNT(reply_id)
+    FROM reply
+    WHERE tweet_id=tweet.tweet_id
+    ) AS replies, 
+    date_time AS dateTime FROM tweet
+    WHERE tweet.tweet_id=${tweetId};`;
+  const tweetDetails = await db.get(getTweets);
+  response.send(tweetDetails);
+});
 
-    // scenario 3
-    case todo !== undefined:
-      const updateTodo = `
-        UPDATE todo
-        SET
-        todo='${todo}'
-        WHERE id = ${todoId};`;
-      await db.run(updateTodo);
-      response.send("Todo Updated");
-      break;
-
-    // scenario 4
-    case category !== undefined:
-      const categoryArray = [`WORK`, `HOME`, `LEARNING`];
-      const isValidCategory = await categoryArray.includes(category);
-      if (isValidCategory) {
-        const updateCategory = `
-        UPDATE todo
-        SET
-        category='${category}'
-        WHERE id = ${todoId};`;
-        await db.run(updateCategory);
-        response.send("Category Updated");
-      } else {
-        response.status(400);
-        response.send("Invalid Todo Category");
-      }
-      break;
-
-    // scenario 5
-    case dueDate !== undefined:
-      const isValidDate = await isValid(new Date(dueDate));
-      if (isValidDate) {
-        const modifiedDate = format(new Date(dueDate), "yyyy-MM-dd");
-        const updateDueDate = `
-        UPDATE todo
-        SET
-        due_date='${modifiedDate}'
-        WHERE id = ${todoId};`;
-        await db.run(updateDueDate);
-        response.send("Due Date Updated");
-      } else {
-        response.status(400);
-        response.send("Invalid Due Date");
-        return;
-      }
-      break;
+// API 7 //
+app.get(
+  "/tweets/:tweetId/likes/",
+  validateFollower,
+  async (request, response) => {
+    const { tweetId } = request;
+    const getNames = `
+    SELECT username FROM user LEFT JOIN like 
+    ON user.user_id=like.user_id 
+    WHERE tweet_id=${tweetId};
+    `;
+    const likedNames = await db.all(getNames);
+    let likedFollowers = [];
+    likedNames.map((item) => {
+      likedFollowers.push(item.username);
+    });
+    response.send({ likes: likedFollowers });
   }
+);
+
+// API 8 //
+app.get(
+  "/tweets/:tweetId/replies/",
+  validateFollower,
+  async (request, response) => {
+    const { tweetId } = request;
+    const getReplies = `
+   SELECT name,reply FROM user NATURAL JOIN reply 
+   WHERE reply.tweet_id=${tweetId};`;
+    const repliesList = await db.all(getReplies);
+    response.send({ replies: repliesList });
+  }
+);
+
+// API 9 //
+app.get("/user/tweets/", jwtAuthorization, async (request, response) => {
+  const { username } = request;
+  const getUserId = `SELECT user_id FROM user WHERE username='${username}';`;
+  const userId = await db.get(getUserId);
+  const { user_id } = userId;
+  const getTweets = `
+       SELECT
+  tweet,
+  (
+  SELECT COUNT(like_id)
+  FROM like
+  WHERE tweet_id=tweet.tweet_id
+  ) AS likes,
+  (
+  SELECT COUNT(reply_id)
+  FROM reply
+  WHERE tweet_id=tweet.tweet_id
+  ) AS replies,
+  date_time AS dateTime
+  FROM tweet
+  WHERE tweet.user_id=${user_id};`;
+
+  const userTweets = await db.all(getTweets);
+  response.send(userTweets);
 });
 
-// scenario 6 //
-app.delete("/todos/:todoId/", async (request, response) => {
-  const { todoId } = request.params;
-  const deleteTodo = `
-    DELETE FROM todo
-    WHERE id=${todoId};`;
-  await db.run(deleteTodo);
-  response.send("Todo Deleted");
+// API 10 //
+app.post("/user/tweets/", jwtAuthorization, async (request, response) => {
+  const { tweet } = request.body;
+  const { username } = request;
+  const getUserId = `SELECT user_id FROM user WHERE username='${username}';`;
+  const userId = await db.get(getUserId);
+  const { user_id } = userId;
+
+  const getPostATweet = `
+  INSERT INTO tweet(tweet,user_id)
+  Values(
+      '${tweet}',
+      ${user_id}
+  );`;
+  const result = await db.run(getPostATweet);
+  response.send("Created a Tweet");
 });
+
+// API 11 //
+app.delete(
+  "/tweets/:tweetId/",
+  jwtAuthorization,
+  deleteVerification,
+  async (request, response) => {
+    const { tweetId } = request;
+    const getDeleteTweet = `
+    DELETE FROM tweet
+    WHERE tweet_id=${tweetId};`;
+    const deleteResponse = await db.run(getDeleteTweet);
+    response.send("Tweet Removed");
+  }
+);
