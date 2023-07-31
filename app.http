@@ -1,80 +1,103 @@
 // API 1 //
-POST http://localhost:3000/register/
-Content-Type: application/json
 
-{
-  "username": "adam_richard",
-  "password": "richard_567",
-  "name": "Adam Richard",
-  "gender": "male"
-}
+// scenario 1
+GET http://localhost:3000/todos/?status=TO%20DO
+Content-Type: application/json
+###
+
+// scenario 2
+GET http://localhost:3000/todos/?priority=HIGH
+Content-Type: application/json
+###
+
+// scenario 3
+GET http://localhost:3000/todos/?priority=HIGH&status=IN%20PROGRESS
+Content-Type: application/json
+###
+
+// scenario 4
+GET http://localhost:3000/todos/?search_q=Buy
+Content-Type: application/json
+###
+
+// scenario 5
+GET http://localhost:3000/todos/?category=WORK&status=DONE
+Content-Type: application/json
+###
+
+// scenario 6
+GET http://localhost:3000/todos/?category=HOME
+Content-Type: application/json
+###
+
+// scenario 7
+GET http://localhost:3000/todos/?category=LEARNING&priority=HIGH
+Content-Type: application/json
 ###
 
 // API 2 //
-POST http://localhost:3000/login/
+GET http://localhost:3000/todos/1/
 Content-Type: application/json
-
-{
-  "username":"JoeBiden",
-  "password":"biden@123"
-}
 ###
 
 // API 3 //
-GET http://localhost:3000/user/tweets/feed/
+GET http://localhost:3000/agenda/?date=2021-12-12
 Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
 ###
 
 // API 4 //
-GET http://localhost:3000/user/following/
+POST http://localhost:3000/todos/
 Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-// API 5 //
-GET http://localhost:3000/user/followers/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-// API 6 //
-GET http://localhost:3000/tweets/10/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-
-// API 7 //
-GET http://localhost:3000/tweets/10/likes/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-// API 8 //
-GET http://localhost:3000/tweets/10/replies/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-// API 9 //
-GET http://localhost:3000/user/tweets/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
-###
-
-// API 10 //
-POST http://localhost:3000/user/tweets/
-Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
 
 {
-   "tweet": "The Mornings..."
+ "id": 6,
+ "todo": "Finalize event theme",
+ "priority": "LOW",
+ "status": "TO DO",
+ "category": "HOME",
+ "dueDate": "2021-02-22"
 }
 ###
 
-// API 11 //
-DELETE http://localhost:3000/tweets/12/
+// API 5 //
+
+// scenario 1
+PUT http://localhost:3000/todos/6/
 Content-Type: application/json
-Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE2OTA2MTA3OTF9.FqEpQBrE2yTW6Z5y4DhKmskCwuSVJxkoyc_wB1XPbQQ
+
+{ "status": "DONE" }
+###
+
+// scenario 2
+PUT http://localhost:3000/todos/6/
+Content-Type: application/json
+
+{ "priority": "HIGH" }
+###
+
+// scenario 3
+PUT http://localhost:3000/todos/6/
+Content-Type: application/json
+
+{
+"todo": "Clean the garden"
+}
+###
+
+// scenario 4
+PUT http://localhost:3000/todos/6/
+Content-Type: application/json
+
+{ "category": "LEARNING" }
+###
+
+// scenario 5
+PUT http://localhost:3000/todos/6/
+Content-Type: application/json
+
+{ "dueDate": "2021-01-12" }
+###
+
+// scenario 6
+DELETE http://localhost:3000/todos/6/
 ###
